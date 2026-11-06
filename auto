@@ -1,0 +1,930 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## ENVIO\n\n",
+        "height": 556,
+        "width": 4440,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -176,
+        16
+      ],
+      "id": "4c2832a0-1a9b-4f1b-9350-2803038807f5",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "amount": "=30"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        4032,
+        320
+      ],
+      "id": "a8738fae-88eb-4d42-9856-f89cd7608400",
+      "name": "Wait",
+      "webhookId": "541d71b9-fc35-499b-ad9d-3843b1fb0af9"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO historico_cobrancas_mario (cliente, telefone, empreendimento, tipo_lembrete, data_vencimento, valor)\nVALUES (\n  '{{ $('Montar Mensagem Mario').item.json.cliente }}', \n  '{{ $('Montar Mensagem Mario').item.json.telefone }}', \n  '{{ $('Montar Mensagem Mario').item.json.empreendimento }}', \n  '{{ $('Montar Mensagem Mario').item.json.tipoMensagem }}', \n  '{{ $('Loop Over Items Mario').item.json.dataVencimento }}', \n  {{ $('Loop Over Items Mario').item.json.valor }}\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3776,
+        400
+      ],
+      "id": "7d562c5f-9f58-47f2-890e-06a28e239d97",
+      "name": "registra lead",
+      "credentials": {
+        "postgres": {
+          "id": "mKnbiuTAK2C7IM67",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 18
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -160,
+        784
+      ],
+      "id": "6ac130f6-2983-4a30-8436-da20ce26e9da",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  empreendimento,\n  tipo_lembrete,\n  data_vencimento,\n  COUNT(*) as quantidade,\n  COALESCE(SUM(valor), 0) as valor_total,\n  MIN(data_registro) as data_inicio,\n  MAX(data_registro) as data_fim\nFROM historico_cobrancas_mario\nGROUP BY empreendimento, tipo_lembrete, data_vencimento\nORDER BY empreendimento, TO_DATE(data_vencimento, 'DD/MM/YYYY');",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        144,
+        784
+      ],
+      "id": "11fd266c-086b-44eb-a37c-8f926647410c",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "mKnbiuTAK2C7IM67",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## ENVIO\n\n",
+        "height": 336,
+        "width": 1220,
+        "color": "#B416C0"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -176,
+        672
+      ],
+      "id": "dab7b663-6dd8-4d0b-9be5-64b93a32b577",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const registros = $input.all();\nconst NOME_EMPRESA = \"Mario Leonardi\";\n\nif (registros.length === 0 || !registros[0].json.empreendimento) {\n  return [{ json: { mensagem: \"Fechamento da Semana - Cobranças (\" + NOME_EMPRESA + \")\\n\\nNesta semana não tivemos disparos de cobrança por aqui.\", temDados: false } }];\n}\n\nconst LABELS_TIPO = {\n  'ENVIO_BOLETO': 'Envio de boleto',\n  'LEMBRETE_VENCIMENTO': 'Lembrete de vencimento',\n  'COBRANCA_ATRASO': 'Cobrança de atraso',\n};\n\n// Agrupa por curso (empreendimento)\nconst porCurso = {};\nlet totalGeralMensagens = 0;\nlet totalGeralValor = 0;\nlet dataInicioGeral = null;\nlet dataFimGeral = null;\n\nregistros.forEach(item => {\n  const curso = item.json.empreendimento || 'SEM CURSO IDENTIFICADO';\n  const tipo = LABELS_TIPO[item.json.tipo_lembrete] || item.json.tipo_lembrete;\n  const dataVenc = item.json.data_vencimento;\n  const qtd = Number(item.json.quantidade);\n  const valor = Number(item.json.valor_total);\n\n  if (!porCurso[curso]) {\n    porCurso[curso] = { linhas: [], subtotalQtd: 0, subtotalValor: 0 };\n  }\n\n  porCurso[curso].linhas.push({ tipo, dataVenc, qtd, valor });\n  porCurso[curso].subtotalQtd += qtd;\n  porCurso[curso].subtotalValor += valor;\n\n  totalGeralMensagens += qtd;\n  totalGeralValor += valor;\n\n  if (item.json.data_inicio) {\n    const inicioItem = new Date(item.json.data_inicio);\n    if (!dataInicioGeral || inicioItem < dataInicioGeral) dataInicioGeral = inicioItem;\n  }\n  if (item.json.data_fim) {\n    const fimItem = new Date(item.json.data_fim);\n    if (!dataFimGeral || fimItem > dataFimGeral) dataFimGeral = fimItem;\n  }\n});\n\nconst formatarData = (data) => data.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });\n\nlet periodoTexto = \"período não identificado\";\nif (dataInicioGeral && dataFimGeral) {\n  periodoTexto = formatarData(dataInicioGeral) === formatarData(dataFimGeral)\n    ? formatarData(dataInicioGeral)\n    : formatarData(dataInicioGeral) + \" a \" + formatarData(dataFimGeral);\n}\n\nconst formatarMoeda = (valor) => Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });\n\nlet blocoCursos = \"\";\nObject.keys(porCurso).sort().forEach(curso => {\n  const dadosCurso = porCurso[curso];\n  blocoCursos += `\\n\\n*${curso}*`;\n  dadosCurso.linhas.forEach(linha => {\n    blocoCursos += `\\n- ${linha.tipo} (venc. ${linha.dataVenc}): ${linha.qtd}x (R$ ${formatarMoeda(linha.valor)})`;\n  });\n  blocoCursos += `\\nSubtotal: ${dadosCurso.subtotalQtd}x - R$ ${formatarMoeda(dadosCurso.subtotalValor)}`;\n});\n\nconst textoFinal = \"Fechamento Semanal | Cobranças \" + NOME_EMPRESA + \"\\n\\n\" +\n\"Período dos disparos: \" + periodoTexto + \"\\n\\n\" +\n\"Segue o resumo dos disparos automáticos desta semana, por curso:\" +\nblocoCursos +\n\"\\n\\nTotal geral: \" + totalGeralMensagens + \" mensagens - R$ \" + formatarMoeda(totalGeralValor) +\n\"\\n\\nBase limpa e pronta para a próxima semana.\";\n\nreturn [{ json: { mensagem: textoFinal, temDados: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        784
+      ],
+      "id": "b84831c1-5f86-4819-9883-ab6994784cb4",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://evolution-api-7nzp.srv1741454.hstgr.cloud/message/sendText/mairoleonardi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "E1305E91F02E-4B0F-A569-AC112A99F5DD"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "=5521985502247"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.mensagem }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "81a17f70-b2c2-4ae1-bfb5-7fbea58b735f",
+      "name": "Enviar WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        656,
+        784
+      ],
+      "notesInFlow": true,
+      "onError": "continueRegularOutput",
+      "notes": "Evolution API - instância virtus - envio de texto via WhatsApp"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT empreendimento, tipo_lembrete, data_vencimento, COUNT(*) AS quantidade,\n       COALESCE(SUM(valor),0) AS valor_total, MIN(data_registro) AS data_inicio, MAX(data_registro) AS data_fim\nFROM historico_cobrancas_mario\nWHERE data_registro > now() - interval '7 days'\nGROUP BY empreendimento, tipo_lembrete, data_vencimento\nORDER BY empreendimento, TO_DATE(data_vencimento, 'DD/MM/YYYY');",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        896,
+        784
+      ],
+      "id": "3f76850d-8433-423a-add7-96ac3606676f",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "postgres": {
+          "id": "mKnbiuTAK2C7IM67",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Junta telefone + boleto + dados de regra e monta uma das 3 mensagens.\n// IMPORTANTE: quando não dá para enviar (sem telefone ou sem boleto), NÃO usamos return [].\n// Devolvemos um item sinalizado (semEnvio: true) para um node IF desviar direto ao Wait,\n// assim o Loop Over Items continua e os próximos clientes não ficam sem processar.\nconst dadosPessoa = $json;\nlet telefone = dadosPessoa.telefone_celular || dadosPessoa.telefone_comercial;\n\nif (telefone) {\n  telefone = String(telefone).replace(/\\D/g, '');\n  if (!telefone.startsWith('55')) {\n    telefone = '55' + telefone;\n  }\n}\n\nconst dadosRegra = $('Aplicar Regras de Cobrança Mario').item.json;\nconst dadosBoleto = $('Consolidar Boleto Mario').item.json;\n\nconst resumoSolicitacoes = (Array.isArray(dadosBoleto.solicitacoes_cobrancas) ? dadosBoleto.solicitacoes_cobrancas : [])\n  .map((s) => `${s.tipo_solicitacao_cobranca}/${s.status_solicitacao_cobranca}`);\n\nconst semEnvio = (motivo) => [{\n  json: {\n    semEnvio: true,\n    motivo,\n    detalhe: {\n      metodo_pagamento: dadosBoleto.metodo_pagamento || null,\n      agendado: dadosBoleto.evento?.agendado ?? null,\n      solicitacoes: resumoSolicitacoes,\n    },\n    cliente: dadosRegra.cliente,\n    empreendimento: dadosRegra.empreendimento,\n    parcelaId: dadosRegra.parcelaId,\n  },\n}];\n\n// Falha de API nos nodes de busca (quando On Error está em Continue)\nif (dadosPessoa.error || dadosBoleto.error) {\n  return semEnvio('ERRO_API');\n}\n\n// Trava: se a parcela já foi paga (dado atualizado do getInstallmentById), não envia nada.\n// Confirmado no JSON real: status vem em português (ex.: ATRASADO) e existe o campo nao_pago.\nconst statusParcela = String(dadosBoleto.status || '').toUpperCase();\nconst STATUS_PAGO = ['RECEBIDO', 'QUITADO', 'PAGO', 'ACQUITTED', 'PAID', 'RECEIVED'];\nconst naoPagoAtual = dadosBoleto.nao_pago !== undefined ? Number(dadosBoleto.nao_pago) : null;\nif (STATUS_PAGO.includes(statusParcela) || (naoPagoAtual !== null && naoPagoAtual <= 0)) {\n  return semEnvio('JA_PAGO');\n}\n\nif (!telefone) {\n  return semEnvio('SEM_TELEFONE');\n}\n\nconst solicitacoes = Array.isArray(dadosBoleto.solicitacoes_cobrancas) ? dadosBoleto.solicitacoes_cobrancas : [];\nconst solicitacaoBoleto = [...solicitacoes].reverse().find(\n  (s) => s.tipo_solicitacao_cobranca === 'BOLETO' && s.status_solicitacao_cobranca === 'REGISTRADO'\n);\nconst linkBoleto = solicitacaoBoleto?.url || null;\n\nif (!linkBoleto) {\n  if (dadosBoleto.evento?.agendado === true) return semEnvio('VENDA_AGENDADA');\n  // Cobrança existe mas o banco recusou (ex.: endereço do cliente incompleto no Conta Azul)\n  if (solicitacoes.some((s) => s.tipo_solicitacao_cobranca === 'BOLETO' && s.status_solicitacao_cobranca === 'INVALIDO')) {\n    return semEnvio('BOLETO_INVALIDO');\n  }\n  // Boleto gerado mas ainda não registrado no banco\n  if (solicitacoes.some((s) => s.tipo_solicitacao_cobranca === 'BOLETO' && s.status_solicitacao_cobranca === 'AGUARDANDO_CONFIRMACAO')) {\n    return semEnvio('BOLETO_AGUARDANDO_REGISTRO');\n  }\n  return semEnvio('SEM_BOLETO');\n}\n\nconst dataFormatada = dadosRegra.dataVencimento;\nconst valorFormatado = Number(dadosRegra.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });\n\nlet mensagem;\n\nif (dadosRegra.tipoMensagem === 'ENVIO_BOLETO') {\n  mensagem = `Prezado(a) cliente,\\n\\nSegue o boleto referente ao empreendimento *${dadosRegra.empreendimento}*, com vencimento em ${dataFormatada}, no valor de ${valorFormatado}.\\n\\nSegue abaixo o link para acesso ao boleto:\\n${linkBoleto}\\n\\nEm caso de dúvidas, permanecemos à disposição.`;\n} else if (dadosRegra.tipoMensagem === 'LEMBRETE_VENCIMENTO') {\n  mensagem = `Prezado(a) cliente,\\n\\nEste é um lembrete de que o boleto referente ao empreendimento *${dadosRegra.empreendimento}* vence hoje, dia ${dataFormatada}, no valor de ${valorFormatado}.\\n\\nSegue abaixo o link para acesso ao boleto:\\n${linkBoleto}\\n\\nSolicitamos a gentileza de efetuar o pagamento ainda hoje, evitando assim a incidência de juros e multa por atraso.\\n\\nEm caso de dúvidas, permanecemos à disposição.`;\n} else {\n  mensagem = `Prezado(a) cliente,\\n\\nIdentificamos que o boleto referente ao empreendimento *${dadosRegra.empreendimento}*, com vencimento em ${dataFormatada}, no valor de ${valorFormatado}, ainda consta em aberto em nosso sistema.\\n\\nSegue abaixo o link para acesso ao boleto:\\n${linkBoleto}\\n\\nSolicitamos a gentileza de regularizar o quanto antes, para evitar a incidência de juros e multa adicionais.\\n\\nCaso o pagamento já tenha sido efetuado, por favor desconsidere esta mensagem.\\n\\nEm caso de dúvidas, permanecemos à disposição.`;\n}\n\nconst templates = {\n  ENVIO_BOLETO: 'cobranca_envio_boleto',\n  LEMBRETE_VENCIMENTO: 'cobranca_lembrete_vencimento',\n  COBRANCA_ATRASO: 'cobranca_atraso',\n};\n\nreturn [{\n  json: {\n    semEnvio: false,\n    cliente: dadosRegra.cliente,\n    telefone,\n    empreendimento: dadosRegra.empreendimento,\n    tipoMensagem: dadosRegra.tipoMensagem,\n    linkBoleto,\n    mensagem,\n    template: templates[dadosRegra.tipoMensagem] || 'cobranca_atraso',\n    parametros: [\n      String(dadosRegra.empreendimento).replace(/\\s+/g, ' ').trim(),\n      dataFormatada,\n      valorFormatado.replace(/\\u00a0/g, ' '),\n      linkBoleto,\n    ],\n  },\n}];"
+      },
+      "id": "0650d58b-45af-4af6-b07c-c040550baa3e",
+      "name": "Montar Mensagem Mario",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3024,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        816,
+        352
+      ],
+      "id": "00c0e3a2-8a53-4d40-a214-7141a6cd059e",
+      "name": "Loop Over Items Mario",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://evolution-api-7nzp.srv1741454.hstgr.cloud/message/sendText/mairoleonardi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "E1305E91F02E-4B0F-A569-AC112A99F5DD"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $json.telefone }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.mensagem }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "55cd7731-be82-46e0-9fb7-ba71684fcf48",
+      "name": "Enviar WhatsApp Mario",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3536,
+        400
+      ],
+      "notesInFlow": true,
+      "onError": "continueErrorOutput",
+      "notes": "Evolution API - instância virtus - envio de texto via WhatsApp"
+    },
+    {
+      "parameters": {
+        "jsCode": "// =====================================================================\n// REGRAS DE COBRANÇA - MARIO LEONARDI (VERSÃO DE PRODUÇÃO)\n// Fluxo: Disparo 8h -> Historico Ja Enviados Mario (Postgres) -> Buscar Contas a Receber -> ESTE node\n//\n// 3 mensagens, só para parcelas ainda não pagas:\n//   ENVIO_BOLETO        = 5 dias antes do vencimento (se não sair, tenta de novo nos 4 dias seguintes)\n//   LEMBRETE_VENCIMENTO = no dia do vencimento\n//   COBRANCA_ATRASO     = 1 dia depois do vencimento\n// Cada mensagem só sai UMA vez por cliente + empreendimento + vencimento (confere o histórico).\n// =====================================================================\nconst DIAS_ANTES = 5;          // dia do 1º envio do boleto\nconst DIAS_RETENTATIVA = 4;    // janela do boleto: 5, 4, 3, 2 e 1 dia antes. NÃO usar 5 (pegaria o dia 0 como boleto e quebraria o lembrete).\nconst MAX_POR_EXECUCAO = 40;   // teto de mensagens por dia (protege o número de WhatsApp)\n\n// Bloqueio por empreendimento (id do centro de custo). Hoje tudo liberado.\nconst regrasPorCentroCusto = {\n  // 'ID_DO_CENTRO_DE_CUSTO': { empreendimento: 'NOME', cobranca: false, motivo: '...' },\n};\n\n// Exceções por cliente (nome em MAIÚSCULAS, sem acento não é necessário: compara pelo nome inteiro)\nconst excecoesClientes = {\n  'SILVIA CARLA GOMES TARGINO': { cobranca: false, motivo: 'em negociacao' },\n};\n\n// ---------------------------------------------------------------------\n// Histórico de envios (vem do node Postgres \"Historico Ja Enviados Mario\")\n// ---------------------------------------------------------------------\nlet registros;\ntry {\n  registros = $('Historico Ja Enviados Mario').first().json.enviados;\n} catch (e) {\n  registros = undefined;\n}\nif (!Array.isArray(registros)) {\n  // TRAVA: sem histórico não enviamos nada (evita duplicados)\n  throw new Error('Histórico de envios indisponível: confira o node Historico Ja Enviados Mario.');\n}\nconst up = (s) => String(s || '').trim().toUpperCase();\nconst chave = (cliente, empreendimento, venc, tipo) => `${up(cliente)}|${up(empreendimento)}|${venc}|${tipo}`;\nconst jaEnviados = new Set(registros.map((r) => chave(r.cliente, r.empreendimento, r.venc, r.tipo)));\n\n// ---------------------------------------------------------------------\nconst hoje = new Date();\nhoje.setHours(0, 0, 0, 0);\n\nconst tipoPorDiferenca = (diff) => {\n  if (diff <= DIAS_ANTES && diff >= DIAS_ANTES - DIAS_RETENTATIVA) return 'ENVIO_BOLETO';\n  if (diff === 0) return 'LEMBRETE_VENCIMENTO';\n  if (diff === -1) return 'COBRANCA_ATRASO';\n  return null;\n};\n\nconst candidatos = [];\nconst todosOsItens = $input.all();\n\nfor (let indice = 0; indice < todosOsItens.length; indice++) {\n  const conta = todosOsItens[indice].json;\n\n  const status = String(conta.status || '').toUpperCase();\n  const naoPago = Number(conta.nao_pago || 0);\n  // PENDING (ainda não venceu) e OVERDUE (já venceu); ignora pagas\n  if (!['PENDING', 'OVERDUE'].includes(status) || naoPago <= 0) continue;\n\n  const clienteId = conta.cliente?.id;\n  if (!clienteId) continue;\n  const nomeCliente = up(conta.cliente?.nome);\n\n  // Lê a data exata do texto, ignorando fuso horário\n  const partes = String(conta.data_vencimento).split('T')[0].split('-');\n  const dataVencimento = new Date(partes[0], partes[1] - 1, partes[2]);\n  dataVencimento.setHours(0, 0, 0, 0);\n  const diffDias = Math.round((dataVencimento.getTime() - hoje.getTime()) / 86400000);\n\n  const tipoMensagem = tipoPorDiferenca(diffDias);\n  if (!tipoMensagem) continue;\n\n  const centroCusto = Array.isArray(conta.centros_de_custo) ? conta.centros_de_custo[0] : null;\n  const centroCustoId = centroCusto?.id;\n  const centroCustoNome = centroCusto?.nome || 'SEM CENTRO DE CUSTO';\n\n  const regraCentroCusto = centroCustoId && regrasPorCentroCusto[centroCustoId]\n    ? regrasPorCentroCusto[centroCustoId]\n    : { empreendimento: centroCustoNome, cobranca: true };\n\n  const nomeExcecao = Object.keys(excecoesClientes).find((nome) => nomeCliente.includes(nome));\n  const regraCliente = nomeExcecao ? excecoesClientes[nomeExcecao] : null;\n  let podeCobrar = regraCentroCusto.cobranca;\n  if (regraCliente) podeCobrar = regraCliente.forcar ? true : regraCliente.cobranca;\n  if (!podeCobrar) continue;\n\n  const dataFormatada = dataVencimento.toLocaleDateString('pt-BR');\n\n  // Já enviado antes? (mesmo cliente + empreendimento + vencimento + tipo)\n  if (jaEnviados.has(chave(conta.cliente?.nome, regraCentroCusto.empreendimento, dataFormatada, tipoMensagem))) continue;\n\n  candidatos.push({\n    prioridade: tipoMensagem === 'ENVIO_BOLETO' ? 1 : 0, // lembrete e atraso não têm 2ª chance: vão primeiro\n    diffDias,\n    json: {\n      parcelaId: conta.id,\n      clienteId,\n      cliente: conta.cliente?.nome,\n      empreendimento: regraCentroCusto.empreendimento,\n      tipoMensagem,\n      dataVencimento: dataFormatada,\n      valor: naoPago,\n    },\n    pairedItem: { item: indice },\n  });\n}\n\n// Lembrete/atraso primeiro; depois boletos mais próximos do vencimento\ncandidatos.sort((a, b) => a.prioridade - b.prioridade || a.diffDias - b.diffDias || String(a.json.parcelaId).localeCompare(String(b.json.parcelaId)));\n\nreturn candidatos\n  .slice(0, MAX_POR_EXECUCAO)\n  .map(({ json, pairedItem }) => ({ json, pairedItem }));"
+      },
+      "id": "577e9a04-b8dc-4aec-9491-4845cab4c564",
+      "name": "Aplicar Regras de Cobrança Mario",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getRevenuesByFilter",
+        "revenueAdditionalFields": {
+          "tamanho_pagina_receita": 250
+        },
+        "data_vencimento_de": "={{ $today.minus({ days: 3 }).toFormat('yyyy-MM-dd') }}",
+        "data_vencimento_ate": "={{ $today.plus({ days: 7 }).toFormat('yyyy-MM-dd') }}"
+      },
+      "id": "db359cc9-2821-4c32-a1b6-febcf2eec619",
+      "name": "Buscar Contas a Receber (ContaAzul) Mario",
+      "type": "@contaazul/n8n-nodes-contaazul.contaAzul",
+      "typeVersion": 1,
+      "position": [
+        288,
+        352
+      ],
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "contaAzulOAuth2Api": {
+          "id": "dZapUPwglhjInNi4",
+          "name": "Conta Azul account 4"
+        }
+      },
+      "notes": "Janela: de ontem (para pegar o 1 dia de atraso) até hoje+7."
+    },
+    {
+      "parameters": {
+        "operation": "getInstallmentById",
+        "installmentId": "={{ $json.parcelaId }}"
+      },
+      "id": "172c8622-7e88-4c66-8750-fbc4ba90beb5",
+      "name": "Buscar Boleto da Parcela Mario",
+      "type": "@contaazul/n8n-nodes-contaazul.contaAzul",
+      "typeVersion": 1,
+      "position": [
+        1072,
+        368
+      ],
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "contaAzulOAuth2Api": {
+          "id": "dZapUPwglhjInNi4",
+          "name": "Conta Azul account 4"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Busca os detalhes completos da parcela, incluindo 'solicitacoes_cobrancas' - é ali que fica o link real do boleto (campo .url), quando já foi emitido."
+    },
+    {
+      "parameters": {
+        "operation": "getPersonById",
+        "personId": "={{ $('Aplicar Regras de Cobrança Mario').item.json.clienteId }}"
+      },
+      "id": "b77c513e-4a81-4de5-9493-630ef03f24e9",
+      "name": "Buscar Telefone do Cliente Mario",
+      "type": "@contaazul/n8n-nodes-contaazul.contaAzul",
+      "typeVersion": 1,
+      "position": [
+        2752,
+        368
+      ],
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "contaAzulOAuth2Api": {
+          "id": "dZapUPwglhjInNi4",
+          "name": "Conta Azul account 4"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "AJUSTE: mesma credencial do Conta Azul. Roda uma vez por item (um cliente por vez). Confirme o nome do campo 'personId' e o nome real do campo de telefone na resposta (telefone, celular, contato.telefone, etc.) abrindo a aba JSON depois de testar."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "a1b2c3d4-0001-4000-8000-000000000001",
+              "leftValue": "={{ $json.metodo_pagamento === 'BOLETO_BANCARIO' && $json.evento?.agendado !== true && Array.isArray($json.solicitacoes_cobrancas) && $json.solicitacoes_cobrancas.length === 0 && Number($json.nao_pago) > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0da63d9f-9222-45f1-b5ef-c054e91d0ec5",
+      "name": "Precisa Gerar Boleto Mario?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/contas-a-receber/gerar-cobranca",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "contaAzulOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { conta_bancaria: '17669df9-6211-4517-9fa2-745a6cf7652c', descricao_fatura: $('Aplicar Regras de Cobrança Mario').item.json.empreendimento + ' - venc. ' + $('Aplicar Regras de Cobrança Mario').item.json.dataVencimento, id_parcela: $json.id, data_vencimento: $json.data_vencimento, tipo: 'BOLETO' } }}",
+        "options": {}
+      },
+      "id": "dc4ea4e4-b44e-4874-838c-89bf1c5d0bdb",
+      "name": "Gerar Cobrança Mario",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        160
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "contaAzulOAuth2Api": {
+          "id": "dZapUPwglhjInNi4",
+          "name": "Conta Azul account 4"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "amount": 15
+      },
+      "id": "675a524d-077b-4b3e-a7f5-cb6555663116",
+      "name": "Aguardar Cobrança Mario",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1824,
+        160
+      ],
+      "webhookId": "a1b2c3d4-2000-4000-8000-000000000003"
+    },
+    {
+      "parameters": {
+        "operation": "getInstallmentById",
+        "installmentId": "={{ $('Aplicar Regras de Cobrança Mario').item.json.parcelaId }}"
+      },
+      "id": "28ce42d3-7ece-4b03-bbe8-e7d67e9278da",
+      "name": "Rebuscar Boleto da Parcela Mario",
+      "type": "@contaazul/n8n-nodes-contaazul.contaAzul",
+      "typeVersion": 1,
+      "position": [
+        2032,
+        160
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "contaAzulOAuth2Api": {
+          "id": "dZapUPwglhjInNi4",
+          "name": "Conta Azul account 4"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Node \"Aplicar Link Gerado Mario\" (Code - Run Once for Each Item)\n// Roda só no caminho em que o fluxo gerou a cobrança. Pega a parcela reconsultada\n// e, se o Conta Azul ainda não registrou o boleto, usa o link devolvido pelo gerar-cobranca.\nconst parcela = { ...$json };\nconst gerar = $('Gerar Cobrança Mario').item.json || {};\nconst lista = Array.isArray(parcela.solicitacoes_cobrancas) ? parcela.solicitacoes_cobrancas : [];\n\nconst jaTemLink = lista.some(\n  (s) => s.tipo_solicitacao_cobranca === 'BOLETO' && s.status_solicitacao_cobranca === 'REGISTRADO' && s.url\n);\n\nif (!jaTemLink && gerar.url && !gerar.error) {\n  parcela.solicitacoes_cobrancas = [\n    ...lista,\n    { tipo_solicitacao_cobranca: 'BOLETO', status_solicitacao_cobranca: 'REGISTRADO', url: gerar.url },\n  ];\n}\nparcela.cobrancaGeradaPeloFluxo = Boolean(gerar.url && !gerar.error);\n\nreturn [{ json: parcela }];\n"
+      },
+      "id": "7c0b222e-1850-45dc-a835-113a45d10f46",
+      "name": "Aplicar Link Gerado Mario",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2256,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return { json: $json };"
+      },
+      "id": "e134c220-cfb7-41d5-a16d-b47c8569ba37",
+      "name": "Consolidar Boleto Mario",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2496,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "b1b2c3d4-0001-4000-8000-000000000009",
+              "leftValue": "={{ $json.semEnvio }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a77be9a1-3baf-446c-a361-5f38ac40f8f2",
+      "name": "Sem Envio Mario?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3280,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "SELECT id, cliente, telefone, empreendimento, data_vencimento, tipo_lembrete, data_registro\nFROM historico_cobrancas_mario\nWHERE data_vencimento = '10/10/2026'\n  AND tipo_lembrete = 'ENVIO_BOLETO'\n  AND telefone IN ('5583998297795','5583993901787','5583981607524','5583999101210',\n                   '5583998172461','5583986272111','5583998633233','5583991839961');"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2176,
+        1408
+      ],
+      "id": "eb9020e3-b740-4406-a2ab-a2019fd1d83d",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://evolution-api-7nzp.srv1741454.hstgr.cloud/message/sendText/mairoleonardi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "E1305E91F02E-4B0F-A569-AC112A99F5DD"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $json.telefone }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.mensagem }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "496ae6fd-a090-48d1-a0ef-0e3bc79f38fe",
+      "name": "Enviar WhatsApp Mario1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1744,
+        1392
+      ],
+      "notesInFlow": true,
+      "onError": "continueRegularOutput",
+      "notes": "Evolution API - instância virtus - envio de texto via WhatsApp"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(\n  json_agg(json_build_object(\n    'cliente', upper(cliente),\n    'empreendimento', empreendimento,\n    'tipo', tipo_lembrete,\n    'venc', data_vencimento\n  )),\n  '[]'::json\n) AS enviados\nFROM historico_cobrancas_mario\nWHERE data_registro > now() - interval '60 days';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        80,
+        352
+      ],
+      "id": "b9d9651b-0800-4e97-951d-87b0088402ff",
+      "name": "Historico Ja Enviados Mario",
+      "credentials": {
+        "postgres": {
+          "id": "mKnbiuTAK2C7IM67",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT cliente, empreendimento, data_vencimento, tipo_lembrete, COUNT(*) AS vezes\nFROM historico_cobrancas_mario\nWHERE data_registro::date = CURRENT_DATE\nGROUP BY 1,2,3,4\nHAVING COUNT(*) > 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2784,
+        992
+      ],
+      "id": "a1ff5496-686a-4abb-8880-5b9b50184b0c",
+      "name": "Execute a SQL query2",
+      "credentials": {
+        "postgres": {
+          "id": "mKnbiuTAK2C7IM67",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "a6a7d3ad-7977-457f-8443-629bf97e03cb",
+      "name": "Disparo Diário (8:00) Mario",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -128,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT tipo_lembrete, data_vencimento, cliente, empreendimento\nFROM historico_cobrancas_mario\nWHERE data_registro::date = CURRENT_DATE\n  AND tipo_lembrete IN ('LEMBRETE_VENCIMENTO','COBRANCA_ATRASO')\nORDER BY 1,3;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2992,
+        992
+      ],
+      "id": "306cce8d-94d4-48d5-ad66-2bdbcc845da4",
+      "name": "Execute a SQL query3",
+      "credentials": {
+        "postgres": {
+          "id": "mKnbiuTAK2C7IM67",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items Mario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "registra lead": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Mensagem Mario": {
+      "main": [
+        [
+          {
+            "node": "Sem Envio Mario?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items Mario": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Buscar Boleto da Parcela Mario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar WhatsApp Mario": {
+      "main": [
+        [
+          {
+            "node": "registra lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aplicar Regras de Cobrança Mario": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items Mario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Contas a Receber (ContaAzul) Mario": {
+      "main": [
+        [
+          {
+            "node": "Aplicar Regras de Cobrança Mario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Boleto da Parcela Mario": {
+      "main": [
+        [
+          {
+            "node": "Precisa Gerar Boleto Mario?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Telefone do Cliente Mario": {
+      "main": [
+        [
+          {
+            "node": "Montar Mensagem Mario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Precisa Gerar Boleto Mario?": {
+      "main": [
+        [
+          {
+            "node": "Gerar Cobrança Mario",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consolidar Boleto Mario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar Cobrança Mario": {
+      "main": [
+        [
+          {
+            "node": "Aguardar Cobrança Mario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar Cobrança Mario": {
+      "main": [
+        [
+          {
+            "node": "Rebuscar Boleto da Parcela Mario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rebuscar Boleto da Parcela Mario": {
+      "main": [
+        [
+          {
+            "node": "Aplicar Link Gerado Mario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aplicar Link Gerado Mario": {
+      "main": [
+        [
+          {
+            "node": "Consolidar Boleto Mario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar Boleto Mario": {
+      "main": [
+        [
+          {
+            "node": "Buscar Telefone do Cliente Mario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sem Envio Mario?": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar WhatsApp Mario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        []
+      ]
+    },
+    "Historico Ja Enviados Mario": {
+      "main": [
+        [
+          {
+            "node": "Buscar Contas a Receber (ContaAzul) Mario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query2": {
+      "main": [
+        []
+      ]
+    },
+    "Disparo Diário (8:00) Mario": {
+      "main": [
+        [
+          {
+            "node": "Historico Ja Enviados Mario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b6bd98b2315baafa3efa1edbcc24fff8d84eaf2ed9ec304f389ee68eddbec5b4"
+  }
+}
